@@ -1,0 +1,40 @@
+{
+  "project_info": {
+    "project_number": "260485815699",
+    "firebase_url": "https://nuocuong-quayrot-default-rtdb.firebaseio.com",
+    "project_id": "nuocuong-quayrot",
+    "storage_bucket": "nuocuong-quayrot.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:260485815699:android:b3354192db099234335c66",
+        "android_client_info": {
+          "package_name": "com.google.myapplication"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "260485815699-105sspeimdaponvocj1rihdne7c3ankc.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBDWwCTRRR4TyVbvi2yFLIV-51ns0K421g"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "260485815699-105sspeimdaponvocj1rihdne7c3ankc.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
