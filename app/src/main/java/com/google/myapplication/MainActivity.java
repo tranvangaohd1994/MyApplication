@@ -64,6 +64,7 @@ public class MainActivity extends AppCompatActivity {
     private CardAdapter mCheckInOutAdapter;
     private WaterAdapter mWaterAdapter;
     private Query query, studentQuery, dateDataQuery;
+    private Query queryCheckIn, dateDataQueryCheckIn;
     private ArrayList<String> arrAllCardTime = new ArrayList<>();
     private ArrayList<String> arrChooseCardTime = new ArrayList<>();
     private ArrayList<WaterCard> arrChooseWaterTime = new ArrayList<>();
@@ -86,16 +87,115 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        mSharedPreferences = getSharedPreferences("RFIDPreference", Context.MODE_PRIVATE);
-        SharedPreferences.Editor editor = mSharedPreferences.edit();
-        Gson gson = new Gson();
-        String json = mSharedPreferences.getString("suggest", "");
-        if (!json.isEmpty()) {
-            Type type = new TypeToken<ArrayList<String>>() {
-            }.getType();
-            arrSuggestCardID = gson.fromJson(json, type);
+        //load sharedPreference to get ID card nearest
+        if(true) {
+            mSharedPreferences = getSharedPreferences("RFIDPreference", Context.MODE_PRIVATE);
+            SharedPreferences.Editor editor = mSharedPreferences.edit();
+            Gson gson = new Gson();
+            String json = mSharedPreferences.getString("suggest", "");
+            if (!json.isEmpty()) {
+                Type type = new TypeToken<ArrayList<String>>() {
+                }.getType();
+                arrSuggestCardID = gson.fromJson(json, type);
+            }
+            initViewer();
+            if (arrSuggestCardID != null && arrSuggestCardID.size() > 0) {
+                inputCardID.setText(arrSuggestCardID.get(arrSuggestCardID.size() - 1));
+            }
+            suggestAdapter = new ArrayAdapter(this, android.R.layout.simple_list_item_1, arrSuggestCardID);
+            inputCardID.setThreshold(0);
+            inputCardID.setAdapter(suggestAdapter);
+            inputCardID.setImeOptions(EditorInfo.IME_ACTION_DONE);
+            ((RadioButton) optionRdg.getChildAt(0)).setChecked(true);
+            cldView.setSelectedDate(CalendarDay.today());
         }
 
+        //check device using app how many time and update to firebase
+        if(true) {
+            String imei = getImei();
+            myDeviceRef = mFirebase.getReference("devices");
+            if (imei != null && !imei.equals("")) {
+                myDeviceRef.child(imei).setValue(numberOfUsage + 1);
+            }
+            saveNumberOfCount();
+            showCurrentNumberOfUsage(imei);
+        }
+
+        //auto load data for nearest card
+        if(!inputCardID.getText().toString().equals("")) {
+            getCheckInData();
+            getCheckInOfCurrentDate(currentDay);
+            getStudentName();
+        }
+
+        //set event for view
+        setEvent();
+    }
+
+    private void setEvent(){
+        // button update event
+        btnUpdateData.setOnClickListener(view -> {
+            cldView.setSelectedDate(CalendarDay.today());
+            InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+            imm.hideSoftInputFromWindow(view.getWindowToken(), 0);
+            cldView.removeDecorators();
+            getStudentName();
+            if (mCurrentOptionIndex == 0) {
+                getCheckInData();
+                getCheckInOfCurrentDate(CalendarDay.today().getDay());
+            } else if (mCurrentOptionIndex == 1) {
+                getWaterData();
+                getWaterOfCurrentDate(CalendarDay.today().getDay());
+            }
+        });
+
+        //button infor event
+        btnInfo.setOnClickListener(view -> {
+            Intent mIntent = new Intent(MainActivity.this, InfoActivity.class);
+            mIntent.putExtra("cardID", inputCardID.getText().toString());
+            startActivity(mIntent);
+        });
+
+        // event for calendarView
+        cldView.setOnMonthChangedListener((widget, date) -> {
+            if (date.getYear() != currentYear || date.getMonth() != currentMonth) {
+                currentYear = date.getYear();
+                currentMonth = date.getMonth();
+                if (getCurrentSelectedRadioButtonIndex() == 1) {
+                    getWaterData();
+                }
+            }
+        });
+        cldView.setOnDateChangedListener((widget, date, selected) -> {
+            currentYear = date.getYear();
+            currentMonth = date.getMonth();
+            currentDay = date.getDay();
+
+            if (mCurrentOptionIndex == 1) {
+                getWaterOfCurrentDate(date.getDay());
+            } else if (mCurrentOptionIndex == 0) {
+                getCheckInOfCurrentDate(date.getDay());
+            }
+        });
+
+        //event for radio button
+        optionRdg.setOnCheckedChangeListener((group, checkedId) -> {
+            if(inputCardID.getText().toString().length() < 2) // check tren inputCard ma chua co gi thi thoat luon
+                return;
+            mCurrentOptionIndex = getCurrentSelectedRadioButtonIndex();
+
+            if (mCurrentOptionIndex == 0) { // check in, check out for student
+                getCheckInData();
+                getCheckInOfCurrentDate(currentDay);
+            } else if (mCurrentOptionIndex == 1) { // check water for student
+                getWaterData();
+                getWaterOfCurrentDate(currentDay);
+            }
+            updateList();
+        });
+    }
+
+    private void initViewer(){
         // Write a message to the database
         mFirebase = FirebaseDatabase.getInstance();
         rcvCheckInOut = findViewById(R.id.rcv_check_in_out);
@@ -134,6 +234,7 @@ public class MainActivity extends AppCompatActivity {
         btnInfo = findViewById(R.id.btn_get_info);
         inputCardID = findViewById(R.id.input_card);
         cldView = findViewById(R.id.card_calendar);
+        cldView.setSelectedDate(CalendarDay.today());
 
         currentYear = CalendarDay.today().getYear();
         currentMonth = CalendarDay.today().getMonth();
@@ -144,90 +245,7 @@ public class MainActivity extends AppCompatActivity {
         tvName = findViewById(R.id.tv_student_name);
         tvName.setText("");
 
-        cldView.setSelectedDate(CalendarDay.today());
-        String imei = getImei();
 
-        myDeviceRef = mFirebase.getReference("devices");
-
-
-        if (imei != null && !imei.equals("")) {
-            myDeviceRef.child(imei).setValue(numberOfUsage + 1);
-        }
-
-        saveNumberOfCount();
-
-        showCurrentNumberOfUsage(imei);
-
-        if (arrSuggestCardID != null && arrSuggestCardID.size() > 0) {
-            inputCardID.setText(arrSuggestCardID.get(arrSuggestCardID.size() - 1));
-        }
-
-        suggestAdapter = new ArrayAdapter(this, android.R.layout.simple_list_item_1, arrSuggestCardID);
-        inputCardID.setThreshold(0);
-        inputCardID.setAdapter(suggestAdapter);
-
-        inputCardID.setImeOptions(EditorInfo.IME_ACTION_DONE);
-
-        ((RadioButton) optionRdg.getChildAt(0)).setChecked(true);
-
-        cldView.setSelectedDate(CalendarDay.today());
-        getCheckInData(CalendarDay.today().getYear(), CalendarDay.today().getMonth(), CalendarDay.today().getDay());
-        getStudentName();
-
-        btnUpdateData.setOnClickListener(view -> {
-            cldView.setSelectedDate(CalendarDay.today());
-            InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
-            imm.hideSoftInputFromWindow(view.getWindowToken(), 0);
-            cldView.removeDecorators();
-            getStudentName();
-            if (mCurrentOptionIndex == 0) {
-                getCheckInData(CalendarDay.today().getYear(), CalendarDay.today().getMonth(), CalendarDay.today().getDay());
-            } else if (mCurrentOptionIndex == 1) {
-                getWaterData();
-                getWaterOfCurrentDate(CalendarDay.today().getDay());
-            }
-        });
-
-        btnInfo.setOnClickListener(view -> {
-            Intent mIntent = new Intent(MainActivity.this, InfoActivity.class);
-            mIntent.putExtra("cardID", inputCardID.getText().toString());
-            startActivity(mIntent);
-        });
-
-        cldView.setOnDateChangedListener((widget, date, selected) -> {
-            currentYear = date.getYear();
-            currentMonth = date.getMonth();
-            currentDay = date.getDay();
-
-            if (mCurrentOptionIndex == 1) {
-                getWaterOfCurrentDate(date.getDay());
-            } else if (mCurrentOptionIndex == 0) {
-                updateDataList(date.getYear(), date.getMonth(), date.getDay());
-            }
-        });
-
-        optionRdg.setOnCheckedChangeListener((group, checkedId) -> {
-            if(inputCardID.getText().toString().length() < 2) // check tren inputCard ma chua co gi thi thoat luon
-                return;
-            mCurrentOptionIndex = getCurrentSelectedRadioButtonIndex();
-            if (mCurrentOptionIndex == 0) { // check in, check out for student
-                getCheckInData(currentYear, currentMonth, currentDay);
-            } else if (mCurrentOptionIndex == 1) { // check water for student
-                getWaterData();
-                getWaterOfCurrentDate(currentDay);
-            }
-            updateList();
-        });
-
-        cldView.setOnMonthChangedListener((widget, date) -> {
-            if (date.getYear() != currentYear || date.getMonth() != currentMonth) {
-                currentYear = date.getYear();
-                currentMonth = date.getMonth();
-                if (getCurrentSelectedRadioButtonIndex() == 1) {
-                    getWaterData();
-                }
-            }
-        });
     }
 
     private void saveNumberOfCount() {
@@ -311,10 +329,12 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private void getCheckInData(int year, int month, int day) {
+    private void getCheckInData() {
         if (!inputCardID.getText().toString().equals("")) {
             mCheckInRef = mFirebase.getReference("CHECK IN").child("RFID");
-            mCheckInRef.child(inputCardID.getText().toString()).addListenerForSingleValueEvent(new ValueEventListener() {
+            queryCheckIn = mCheckInRef.child(inputCardID.getText().toString()).child(cldView.getCurrentDate().getYear() + "")
+                    .child(cldView.getCurrentDate().getMonth() < 10? "0" + cldView.getCurrentDate().getMonth() : cldView.getCurrentDate().getMonth() + "");
+            queryCheckIn.addListenerForSingleValueEvent(new ValueEventListener() {
                 @Override
                 public void onDataChange(@NonNull DataSnapshot dataSnapshot) {
                     Iterable<DataSnapshot> snapshotIterator = dataSnapshot.getChildren();
@@ -341,17 +361,11 @@ public class MainActivity extends AppCompatActivity {
                         mCldDays.clear();
                         arrAllCardTime.clear();
                         while (iterator.hasNext()) {
+                            tvNoWaterData.setVisibility(View.GONE);
                             DataSnapshot next = iterator.next();
-                            if (!next.getKey().equals("ESP")) {
-                                long cardDate = (long) next.getValue();
-                                String cardDateString = CommonUtils.getDate(cardDate);
-                                String cardTimeString = CommonUtils.getTime(cardDate);
-                                mCldDays.add(CalendarDay.from(Integer.parseInt(cardDateString.substring(4, 8)), Integer.parseInt(cardDateString.substring(2, 4)),
-                                        Integer.parseInt(cardDateString.substring(0, 2))));
-                                arrAllCardTime.add(cardDateString + cardTimeString);
-                            }
+                            int cardDate = Integer.parseInt(next.getKey());
+                            mCldDays.add(CalendarDay.from(cldView.getCurrentDate().getYear(), cldView.getCurrentDate().getMonth(), cardDate));
                         }
-                        updateDataList(year, month, day);
                         cldView.addDecorator(new EventDecorator(MainActivity.this, mCldDays));
                     }
                 }
@@ -422,11 +436,38 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    void getCheckInOfCurrentDate(int currentDate) {
+        String currentSelectedCheckInDate = currentDate < 10? "0" + currentDate : currentDate + "";
+        dateDataQueryCheckIn = mCheckInRef.child(inputCardID.getText().toString()).child(cldView.getCurrentDate().getYear() + "")
+                .child(cldView.getCurrentDate().getMonth() < 10? "0" + cldView.getCurrentDate().getMonth() : cldView.getCurrentDate().getMonth() + "")
+                .child(currentSelectedCheckInDate);
+        arrChooseCardTime.clear();
+        dateDataQueryCheckIn.addListenerForSingleValueEvent(new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot dataSnapshot) {
+                Iterable<DataSnapshot> snapshotIterator = dataSnapshot.getChildren();
+                Iterator<DataSnapshot> iterator = snapshotIterator.iterator();
+                while(iterator.hasNext()) {
+                    DataSnapshot next = iterator.next();
+                    arrChooseCardTime.add(next.getKey().toString());
+                }
+                Collections.reverse(arrChooseCardTime);
+                mCheckInOutAdapter.notifyDataSetChanged();
+                updateList();
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError databaseError) {
+
+            }
+        });
+    }
+
     void getWaterOfCurrentDate(int currentDate) {
         String currentSelectedWaterDate = currentDate < 10? "0" + currentDate : currentDate + "";
         dateDataQuery = mWaterRef.child(inputCardID.getText().toString()).child(cldView.getCurrentDate().getYear() + "")
                 .child(cldView.getCurrentDate().getMonth() < 10? "0" + cldView.getCurrentDate().getMonth() : cldView.getCurrentDate().getMonth() + "")
-                .child(currentSelectedWaterDate + "");
+                .child(currentSelectedWaterDate);
         arrChooseWaterTime.clear();
         dateDataQuery.addListenerForSingleValueEvent(new ValueEventListener() {
             @Override
@@ -449,27 +490,6 @@ public class MainActivity extends AppCompatActivity {
 
             }
         });
-    }
-
-    void updateDataList(int year, int month, int day) {
-        boolean isFound = false;
-        arrChooseCardTime.clear();
-        String selectedDay = day < 10? "0" + day : day + "";
-        String date = selectedDay + "" + month + "" + year + "";
-        for (int i = 0; i < arrAllCardTime.size(); i++) {
-            String cardTimeDate = arrAllCardTime.get(i).substring(0,8);
-            if (cardTimeDate.equals(date)) {
-                isFound = true;
-                arrChooseCardTime.add(arrAllCardTime.get(i).substring(8,16));
-            } else if (isFound) {
-                break;
-            }
-        }
-
-        Collections.reverse(arrChooseCardTime);
-
-        mCheckInOutAdapter.notifyDataSetChanged();
-        updateList();
     }
 
     void updateList() {
